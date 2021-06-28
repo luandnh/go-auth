@@ -1,4 +1,4 @@
-module go-auth
+module github.com/luandnh/go-auth
 
 go 1.16
 
