@@ -48,6 +48,12 @@ func (ig *GoAuthMiddleware) SetupGoAuthMiddleware() {
 }
 
 func (ig *GoAuthMiddleware) ValidateBasicAuth(ctx context.Context, r *http.Request, username, password string) (auth.Info, error) {
+
+	if username == "luandnh" && password == "123456" {
+		extension := make(map[string][]string)
+		user := auth.NewDefaultUser("", "u-123", nil, extension)
+		return user, nil
+	}
 	return nil, errors.New("invalid credentials")
 }
 

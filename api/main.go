@@ -94,8 +94,9 @@ func TestAuth(c *gin.Context) {
 
 func CreateToken(c *gin.Context) {
 	client := goauth.AuthClient{
-		ClienId: "c2314982-653a-412c-9d7f-42d8e4a10ca6",
-		UserId:  "u-1",
+		ClienId:   "c7e2de7f-f5f9-4f08-954f-6a4cc3a94740",
+		UserId:    "u-1",
+		ExpiredIn: 1000,
 	}
 	clientRes, err := GoAuth.ClientCredential(client, false)
 	if err != nil {

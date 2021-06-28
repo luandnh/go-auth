@@ -47,16 +47,17 @@ type GoAuth struct {
 }
 
 type AuthClient struct {
-	ClienId      string    `json:"client_id"`
-	UserId       string    `json:"user_id"`
-	Token        string    `json:"token"`
-	RefreshToken string    `json:"refresh_token"`
-	CreatedTime  time.Time `json:"create_at"`
-	ExpiredTime  time.Time `json:"expire_at"`
-	Scope        string    `json:"scope"`
-	TokenType    string    `json:"token_type"`
-	JWT          string    `json:"jwt"`
-	UserData     map[string]string
+	ClienId      string            `json:"client_id"`
+	UserId       string            `json:"user_id"`
+	Token        string            `json:"token"`
+	RefreshToken string            `json:"refresh_token"`
+	CreatedTime  time.Time         `json:"created_at"`
+	ExpiredTime  time.Time         `json:"expired_at"`
+	ExpiredIn    int               `json:"expired_in"`
+	Scope        string            `json:"scope"`
+	TokenType    string            `json:"token_type"`
+	JWT          string            `json:"jwt"`
+	UserData     map[string]string `json:"-"`
 }
 
 func NewGoAuth(client GoAuth) (IGoAuth, error) {
@@ -83,6 +84,8 @@ func NewGoAuth(client GoAuth) (IGoAuth, error) {
 	}
 	if client.TokenType == "" {
 		g.TokenType = tokenType
+	} else {
+		g.TokenType = client.TokenType
 	}
 	return g, nil
 }
@@ -176,7 +179,13 @@ func (g *GoAuth) DeleteClientFromRedis(client AuthClient) error {
 
 func (g *GoAuth) CreateClient(client AuthClient) AuthClient {
 	currentTime := time.Now().Local()
-	expiredTime := currentTime.Add(time.Duration(g.RedisExpiredIn) * time.Second)
+	expiredIn := 0
+	if client.ExpiredIn != 0 {
+		expiredIn = client.ExpiredIn
+	} else {
+		expiredIn = g.RedisExpiredIn
+	}
+	expiredTime := currentTime.Add(time.Duration(expiredIn) * time.Second)
 	accesstoken := AuthClient{
 		ClienId:      client.ClienId,
 		UserId:       client.UserId,
@@ -204,37 +213,38 @@ func (g *GoAuth) ClientCredential(client AuthClient, isRefresh bool) (AuthClient
 }
 func (g *GoAuth) CheckClientInRedis(client AuthClient) (AuthClient, error) {
 	log.Info("ClientCredential - clientId : ", client.ClienId)
+	var clientNew AuthClient
 	clientRes, err := g.GetUserFromRedis(client.ClienId)
 	if err != nil {
-		return client, err
+		return clientNew, err
 	}
 	if clientRes != "" {
 		var ok bool
-		client, ok = clientRes.(AuthClient)
+		clientNew, ok = clientRes.(AuthClient)
 		if !ok {
-			return client, errors.New("parse client json failed")
+			return clientNew, errors.New("parse client json failed")
 		}
 	}
-	if client.ClienId == "" {
-		client = g.CreateClient(client)
-		if err := g.InsertClientToRedis(client); err != nil {
-			return client, err
+	if clientNew.ClienId == "" {
+		clientNew = g.CreateClient(client)
+		if err := g.InsertClientToRedis(clientNew); err != nil {
+			return clientNew, err
 		}
 	} else {
 		currentTime := time.Now().Local()
-		if client.ExpiredTime.Sub(currentTime) <= 0 {
-			if err := g.DeleteClientFromRedis(client); err != nil {
-				return client, err
+		if clientNew.ExpiredTime.Sub(currentTime) <= 0 {
+			if err := g.DeleteClientFromRedis(clientNew); err != nil {
+				return clientNew, err
 			}
-			client = g.CreateClient(client)
-			if err := g.InsertClientToRedis(client); err != nil {
-				return client, err
+			clientNew = g.CreateClient(client)
+			if err := g.InsertClientToRedis(clientNew); err != nil {
+				return clientNew, err
 			}
 		} else {
 			log.Info("ClientCredential - token already existed")
 		}
 	}
-	return client, nil
+	return clientNew, nil
 }
 
 func (g *GoAuth) CheckTokenInRedis(token string) (AuthClient, error) {
@@ -259,6 +269,7 @@ func (g *GoAuth) CreateClientResponse(client AuthClient, isRefresh bool) (AuthCl
 	if client.Token == "" {
 		return response, errors.New("token is null")
 	}
+	currentTime := time.Now().Local()
 	if !isRefresh {
 		response = AuthClient{
 			CreatedTime: client.CreatedTime,
@@ -266,7 +277,9 @@ func (g *GoAuth) CreateClientResponse(client AuthClient, isRefresh bool) (AuthCl
 			UserId:      client.UserId,
 			Token:       client.Token,
 			ExpiredTime: client.ExpiredTime,
+			ExpiredIn:   int(client.ExpiredTime.Sub(currentTime).Seconds()),
 			TokenType:   g.TokenType,
+			JWT:         client.JWT,
 			Scope:       client.Scope,
 		}
 	} else {
@@ -276,8 +289,10 @@ func (g *GoAuth) CreateClientResponse(client AuthClient, isRefresh bool) (AuthCl
 			UserId:       client.UserId,
 			Token:        client.Token,
 			ExpiredTime:  client.ExpiredTime,
+			ExpiredIn:    int(client.ExpiredTime.Sub(currentTime).Seconds()),
 			TokenType:    g.TokenType,
 			Scope:        client.Scope,
+			JWT:          client.JWT,
 			RefreshToken: client.RefreshToken,
 		}
 	}
